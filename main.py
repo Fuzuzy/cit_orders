@@ -7,7 +7,7 @@ from aiogram.dispatcher import FSMContext
 
 async def on_startup(_):
     print("Бот вышел в онлайн")
-    #sqlite_db.sql_start()
+    sqlite_db.sql_start()
 
 
 client.register_handlers_client(dp)

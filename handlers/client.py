@@ -9,13 +9,11 @@ from aiogram.dispatcher.filters.state import State, StatesGroup
 from aiogram.dispatcher import FSMContext
 import datetime
 from datetime import datetime
-from aiogram.types import ReplyKeyboardRemove, \
-    ReplyKeyboardMarkup, KeyboardButton, \
-    InlineKeyboardMarkup, InlineKeyboardButton
+from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 
 
 class Form(StatesGroup):
-    entry1 = State()
+    money_add = State()
 
 
 @dp.message_handler(commands="start")
@@ -45,23 +43,28 @@ async def handle_photo(message: types.Message):
     # print(string)
     articul = re.compile(r"\d{2}-\d{8}")  # форма для артикула
     match_articul = articul.findall(string)  # поиск артикула на фото
-    if '00-00018386' in match_articul:
-        match_articul.remove('00-00018386')
-    elif '00-00019386' in match_articul:
-        match_articul.remove('00-00019386')
-    elif '00-00081781' in match_articul:
-        match_articul.remove("00-00081781")
-    string_art = ''.join(str(item) for item in match_articul)  # преобразование в строку
-    # print(string)
-    insert_data_query = '''
-        INSERT INTO orders (articul, photo)
-        VALUES (?, ?)
-    '''
-    data = (string_art, photo_id)
-    cursor.execute(insert_data_query, data)
-    conn.commit()
-    await message.answer(f"Артикул: {string_art}")
-    conn.close()
+    if match_articul == []:
+        await message.delete()
+        await message.answer('Артикул не распознан, пришлите еще одно фото')
+    else:
+        if '00-00018386' in match_articul:
+            match_articul.remove('00-00018386')
+        elif '00-00019386' in match_articul:
+            match_articul.remove('00-00019386')
+        elif '00-00081781' in match_articul:
+            match_articul.remove("00-00081781")
+        string_art = ''.join(str(item) for item in match_articul)  # преобразование в строку
+        # print(string)
+        insert_data_query = '''
+            INSERT INTO orders (articul, photo)
+            VALUES (?, ?)
+        '''
+        data = (string_art, photo_id)
+        cursor.execute(insert_data_query, data)
+        conn.commit()
+        await message.delete()
+        await bot.send_photo(message.chat.id, photo=photo_id, caption=string_art)
+        conn.close()
 
 
 @dp.message_handler(Text(equals='Записать занос'))
@@ -69,7 +72,7 @@ async def add_money(message: types.Message):
     markup = InlineKeyboardMarkup()
     button = InlineKeyboardButton(text="Отмена", callback_data="cancel")
     markup.add(button)
-    await Form.entry1.set()
+    await Form.money_add.set()
     await message.reply("Введите сумму", reply_markup=markup)
 
 
@@ -84,28 +87,26 @@ async def cancel_handler(call: types.callback_query, state: FSMContext):
     await bot.send_message(call.message.chat.id, 'Отменено, для повторного ввода воспользуйтесь кнопкой заново')
 
 
-@dp.message_handler(state=Form.entry1)
+@dp.message_handler(state=Form.money_add)
 async def process_money(message: types.Message, state: FSMContext):
-    async with state.proxy() as data:
-        data['entry1'] = message.text
-        name_quantity = message.text
-        current_date = datetime.now()
-        table_name = 'test'
-        conn = sqlite3.connect('orders.db')
-        cursor = conn.cursor()
-        create_table_query = f'''
-            CREATE TABLE IF NOT EXISTS "{table_name}" (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                money TEXT
-            )
-        '''
-        cursor.execute(create_table_query)
-        conn.commit()
-        conn.close()
+    conn = sqlite3.connect('orders.db')
+    cursor = conn.cursor()
+    time = datetime.now().strftime('%m.%Y')
+    message_text = message.text
+    message_date = message.date
+    insert_data_query = f'''
+        INSERT INTO "{time}" (message_text, message_date)
+        VALUES(?,?)
+    '''
+    data = (message_text, message_date)
+    cursor.execute(insert_data_query, data)
+    conn.commit()
+    await message.reply('Записано')
+
 
 def register_handlers_client(dp: Dispatcher):
     dp.register_message_handler(cmd_start, commands="start")
     dp.register_message_handler(handle_photo, content_types=[types.ContentType.PHOTO])
     dp.register_message_handler(add_money, Text(equals='Записать занос'))
-    dp.register_message_handler(process_money, state=Form.entry1)
+    dp.register_message_handler(process_money, state=Form.money_add)
     dp.register_message_handler(Text('cancel'), state='*')
